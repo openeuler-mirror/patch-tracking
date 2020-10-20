@@ -1,10 +1,10 @@
-'''
+"""
     Response contain and code ID
-'''
+"""
 import json
 
 
-class ResponseCode:
+class ResponseCode(object):
     """
         Description: response code to web
         changeLog:
