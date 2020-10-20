@@ -1,10 +1,10 @@
 Summary:    This is a tool for automatically tracking upstream repository code patches
 Name:       patch-tracking
-Version:    1.0.2
-Release:    2
+Version:    1.0.4
+Release:    1
 License:    Mulan PSL v2
 URL:        https://gitee.com/openeuler/openEuler-Advisor
-Source0:    patch-tracking-%{version}.tar
+Source0:    patch-tracking.tar
 BuildArch:  noarch
 
 
@@ -17,7 +17,7 @@ Requires: python3-requests python3-pandas
 This is a tool for automatically tracking upstream repository code patches
 
 %prep
-%setup -n %{name}-%{version}
+%setup -n %{name}
 
 %build
 %py3_build
@@ -52,6 +52,14 @@ rm -rf $RPM_BUILD_ROOT
 
 
 %changelog
+* Fri Sep 25 2020 chenyanpan <chenyanpan@huawei.com> - 1.0.4-1
+- Type: bugfix
+- DESC: https://gitee.com/src-openeuler/patch-tracking/issues: I1WOQQ I1WOD5 I1WNTS I1U927
+
+* Sat Sep 19 2020 chenyanpan <chenyanpan@huawei.com> - 1.0.3-1
+- Type: bugfix
+- DESC: https://gitee.com/src-openeuler/patch-tracking/issues: I1VP3C I1VK4T I1U927
+
 * Sat Sep 12 2020 chenyanpan <chenyanpan@huawei.com> - 1.0.2-2
 - Type: bugfix
 - DESC: fixed name of python3-Flask-HTTPAuth
@@ -61,7 +69,6 @@ rm -rf $RPM_BUILD_ROOT
 - DESC: fixed issues, specify Requires
 - https://gitee.com/src-openeuler/patch-tracking/issues: I1TXTA I1TWVU I1TSG7 I1TYJV I1UAMC I1TYNW
 - https://gitee.com/openeuler/docs/issues: I1U54H
-
 
 * Mon Sep 07 2020 chenyanpan <chenyanpan@huawei.com> - 1.0.1-1
 - Type: bugfix
