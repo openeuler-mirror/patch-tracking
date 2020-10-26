@@ -5,16 +5,48 @@ import datetime
 import logging
 from patch_tracking.task import scheduler
 from patch_tracking.database.models import Tracking
-from patch_tracking.util.github_api import GitHubApi
+from patch_tracking.util.upstream.github import GitHub
+from patch_tracking.util.upstream.git import Git
 from patch_tracking.api.business import update_tracking
+from patch_tracking.util.upstream.github import get_user_info as github_get_user_info
+from patch_tracking.util.gitee_api import get_user_info as gitee_get_user_info
 
 logger = logging.getLogger(__name__)
+
+
+def check_token(app):
+    """ check gitee/github token """
+    gitee_token = app.config['GITEE_ACCESS_TOKEN']
+    github_token = app.config['GITHUB_ACCESS_TOKEN']
+    token_error = False
+    try:
+        github_ret = github_get_user_info(github_token)
+        if not github_ret[0]:
+            logger.error(github_ret[1])
+            logger.error('github token is bad credentials.')
+            token_error = True
+    except UnicodeEncodeError:
+        logger.error('github token is bad credentials.')
+        token_error = True
+
+    gitee_ret = gitee_get_user_info(gitee_token)
+    if not gitee_ret[0]:
+        logger.error(gitee_ret[1])
+        logger.error('gitee token is bad credentials.')
+        token_error = True
+
+    if token_error:
+        return False
+    return True
 
 
 def init(app):
     """
     scheduler jobs init
     """
+    if not check_token(app):
+        logger.error('[Patch Tracking] Token Error. Stop tracking task.')
+        return
     scan_db_interval = app.config['SCAN_DB_INTERVAL']
     scheduler.init_app(app)
     scheduler.add_job(
@@ -55,13 +87,35 @@ def check_empty_commit_id(flask_app):
     """
     with flask_app.app_context():
         new_track = get_track_from_db()
-        github_api = GitHubApi()
         for item in new_track:
             if item.scm_commit:
                 continue
-            status, result = github_api.get_latest_commit(item.scm_repo, item.scm_branch)
-            if status == 'success':
-                commit_id = result['latest_commit']
+            if item.version_control == "github":
+                github_api = GitHub(item)
+                status, result = github_api.get_latest_commit_id()
+                if status == 'success':
+                    commit_id = result['latest_commit']
+                    data = {
+                        'version_control': item.version_control,
+                        'repo': item.repo,
+                        'branch': item.branch,
+                        'enabled': item.enabled,
+                        'scm_commit': commit_id,
+                        'scm_branch': item.scm_branch,
+                        'scm_repo': item.scm_repo
+                    }
+                    update_tracking(data)
+                else:
+                    logger.error(
+                        'Check empty CommitID: Fail to get latest commit id of scm_repo: %s scm_branch: %s. \
+                        Return val: %s', item.scm_repo, item.scm_branch, result
+                    )
+            elif item.version_control == "git":
+                git_api = Git(item)
+                commit_id = git_api.git_latest_sha()
+                if not commit_id:
+                    return None
+
                 data = {
                     'version_control': item.version_control,
                     'repo': item.repo,
@@ -77,6 +131,8 @@ def check_empty_commit_id(flask_app):
                     'Check empty CommitID: Fail to get latest commit id of scm_repo: %s scm_branch: %s. Return val: %s',
                     item.scm_repo, item.scm_branch, result
                 )
+
+        return None
 
 
 def get_track_from_db():
