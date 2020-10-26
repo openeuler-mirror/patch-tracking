@@ -1,12 +1,49 @@
 """github upstream"""
 import logging
+import time
+import requests
 from flask import current_app
-from patch_tracking.util.github_api import GitHubApi
+from requests import exceptions
 from patch_tracking.api.business import update_tracking
 from sqlalchemy.exc import SQLAlchemyError
 import patch_tracking.util.upstream.upstream as upstream
 
 logger = logging.getLogger(__name__)
+
+
+def get_user_info(token):
+    """
+    get user info
+    """
+    url = "https://api.github.com/user"
+    count = 30
+    token = 'token ' + token
+    headers = {
+        'User-Agent': 'Mozilla/5.0',
+        'Authorization': token,
+        'Content-Type': 'application/json',
+        'Connection': 'close',
+        'method': 'GET',
+        'Accept': 'application/json'
+    }
+    while count > 0:
+        try:
+            ret = requests.get(url, headers=headers)
+            if ret.status_code == 200:
+                return True, ret.text
+            return False, ret.text
+        except exceptions.ConnectionError as err:
+            logger.warning(err)
+            time.sleep(10)
+            count -= 1
+            continue
+        except UnicodeEncodeError:
+            return False, 'github token is bad credentials.'
+        except IOError as error:
+            return False, error
+    if count == 0:
+        logger.error('Fail to connnect to github: %s after retry 30 times.', url)
+        return False, 'connect error'
 
 
 class GitHub(upstream.Upstream):
@@ -15,28 +52,110 @@ class GitHub(upstream.Upstream):
     """
     def __init__(self, track):
         super().__init__(track)
-        self.github_api = GitHubApi()
-        self.token = current_app.config['GITHUB_ACCESS_TOKEN']
+        _token = 'token ' + current_app.config['GITHUB_ACCESS_TOKEN']
+        self.headers = {
+            'User-Agent': 'Mozilla/5.0',
+            'Authorization': _token,
+            'Content-Type': 'application/json',
+            'Connection': 'close',
+            'method': 'GET',
+            'Accept': 'application/json'
+        }
+
+    def api_request(self, url):
+        """
+        request GitHub API
+        """
+        logger.debug("Connect url: %s", url)
+        count = 30
+        while count > 0:
+            try:
+                response = requests.get(url, headers=self.headers)
+                return response
+            except exceptions.ConnectionError as err:
+                logger.warning(err)
+                time.sleep(10)
+                count -= 1
+                continue
+            except IOError as err:
+                logger.error(err)
+                return False
+        if count == 0:
+            logger.error('Fail to connnect to github: %s after retry 30 times.', url)
+            return False
+
+    def get_patch(self, repo_url, scm_commit, last_commit):
+        """
+        get patch
+        """
+        api_url = 'https://github.com'
+        if scm_commit != last_commit:
+            commit = scm_commit + '...' + last_commit + '.diff'
+        else:
+            commit = scm_commit + '^...' + scm_commit + '.diff'
+        ret_dict = dict()
+
+        url = '/'.join([api_url, repo_url, 'compare', commit])
+        ret = self.api_request(url)
+        if ret:
+            if ret.status_code == 200:
+                patch_content = ret.text
+                ret_dict['status'] = 'success'
+                ret_dict['api_ret'] = patch_content
+            else:
+                logger.error('%s failed. Return val: %s', url, ret)
+                ret_dict['status'] = 'error'
+                ret_dict['api_ret'] = ret.text
+        else:
+            ret_dict['status'] = 'error'
+            ret_dict['api_ret'] = 'fail to connect github by api.'
+        return ret_dict
 
     def get_latest_commit_id(self):
         """
-        get latest commit id
+        get latest commit_ID, commit_message, commit_date
+        :return: res_dict
         """
-        status, result = self.github_api.get_latest_commit(self.track.scm_repo, self.track.scm_branch)
-        logger.debug(
-            'repo: %s branch: %s. get_latest_commit: %s %s', self.track.scm_repo, self.track.scm_branch, status, result
-        )
+        api_url = 'https://api.github.com/repos'
+        url = '/'.join([api_url, self.track.scm_repo, 'branches', self.track.scm_branch])
+        ret = self.api_request(url)
+        res_dict = dict()
+        if ret:
+            if ret.status_code == 200:
+                res_dict['latest_commit'] = ret.json()['commit']['sha']
+                res_dict['message'] = ret.json()['commit']['commit']['message']
+                res_dict['time'] = ret.json()['commit']['commit']['committer']['date']
+                logger.debug(
+                    'repo: %s branch: %s. get_latest_commit: %s %s', self.track.scm_repo, self.track.scm_branch,
+                    'success', res_dict
+                )
+                return 'success', res_dict
 
-        return status, result
+            logger.error('%s failed. Return val: %s', url, ret)
+            return 'error', ret.json()
+        return 'error', 'connect error'
 
-    def get_commit_info(self, commit_id):
+    def get_commit_info(self, repo_url, commit_id):
         """
         get commit info
         """
-        status, result = self.github_api.get_commit_info(self.track.scm_repo, commit_id)
-        logger.debug('get_commit_info: %s %s', status, result)
+        res_dict = dict()
+        api_url = 'https://api.github.com/repos'
+        url = '/'.join([api_url, repo_url, 'commits', commit_id])
+        ret = self.api_request(url)
+        if ret:
+            if ret.status_code == 200:
+                res_dict['commit_id'] = commit_id
+                res_dict['message'] = ret.json()['commit']['message']
+                res_dict['time'] = ret.json()['commit']['author']['date']
+                if 'parents' in ret.json() and ret.json()['parents']:
+                    res_dict['parent'] = ret.json()['parents'][0]['sha']
+                logger.debug('get_commit_info: %s %s', 'success', res_dict)
+                return 'success', res_dict
 
-        return status, result
+            logger.error('%s failed. Return val: %s', url, ret)
+            return 'error', ret.json()
+        return 'error', 'connect error'
 
     def get_patch_list(self):
         """
@@ -70,11 +189,11 @@ class GitHub(upstream.Upstream):
             return None
 
         while self.track.scm_commit != latest_commit:
-            status, result = self.get_commit_info(latest_commit)
+            status, result = self.get_commit_info(self.track.scm_repo, latest_commit)
             logger.debug('get_commit_info: %s %s', status, result)
             if status == 'success':
                 if 'parent' in result:
-                    ret = self.github_api.get_patch(self.track.scm_repo, latest_commit, latest_commit)
+                    ret = self.get_patch(self.track.scm_repo, latest_commit, latest_commit)
                     logger.debug('get patch api ret: %s', ret)
                     if ret['status'] == 'success':
                         result['patch_content'] = ret['api_ret']
@@ -97,7 +216,6 @@ class GitHub(upstream.Upstream):
                     '[Patch Tracking] Get scm: %s commit: %s ID/message/time failed. Result: %s', self.track.scm_repo,
                     latest_commit, result
                 )
-
         return commit_list
 
     def get_scm_patch(self):
@@ -114,5 +232,4 @@ class GitHub(upstream.Upstream):
             issue_table += '| [{}]({}) | {} | {} |'.format(
                 latest_commit['commit_id'][0:7], scm_commit_url, latest_commit['time'], latest_commit['message']
             ) + '\n'
-
         return issue_table

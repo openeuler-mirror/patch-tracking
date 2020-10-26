@@ -2,10 +2,10 @@
 import logging
 import os
 from datetime import datetime
-from flask import current_app
-from sqlalchemy.exc import SQLAlchemyError
 import git
 import git.exc
+from flask import current_app
+from sqlalchemy.exc import SQLAlchemyError
 from patch_tracking.api.business import update_tracking
 import patch_tracking.util.upstream.upstream as upstream
 
@@ -78,14 +78,14 @@ class Git(upstream.Upstream):
         get latest commit id
         """
         repo_path = os.path.join(self.base_path, self.repo_dir_name)
-        logging.info("Getting latest commit id of repo: %s branch: %s .", repo_path, self.track.branch)
+        logging.info("Getting latest commit id of repo: %s branch: %s .", repo_path, self.track.scm_branch)
         try:
             repo = git.Repo(repo_path)
-            sha = repo.commit(self.track.branch).hexsha
+            sha = repo.commit(self.track.scm_branch).hexsha
             return sha
         except git.exc.GitError as err:
             logging.error(
-                "Get latest commit id of repo: %s branch: %s failed. Error: %s", repo_path, self.track.branch, err
+                "Get latest commit id of repo: %s branch: %s failed. Error: %s", repo_path, self.track.scm_branch, err
             )
             return False
 

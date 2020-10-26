@@ -9,11 +9,11 @@ import random
 from sqlalchemy.exc import SQLAlchemyError
 from patch_tracking.util.gitee_api import create_branch, upload_patch, create_gitee_issue
 from patch_tracking.util.gitee_api import create_pull_request, get_path_content, upload_spec, create_spec
-from patch_tracking.util.github_api import GitHubApi
 from patch_tracking.database.models import Tracking
 from patch_tracking.api.business import update_tracking, create_issue
 from patch_tracking.task import scheduler
 from patch_tracking.util.spec import Spec
+from patch_tracking.util.upstream import Factory
 
 logger = logging.getLogger(__name__)
 
@@ -25,9 +25,10 @@ def upload_patch_to_gitee(track):
     cur_time = datetime.datetime.now().strftime("%Y%m%d%H%M%S%f")
     with scheduler.app.app_context():
         logger.info('[Patch Tracking %s] track.scm_commit_id: %s.', cur_time, track.scm_commit)
-        patch = get_scm_patch(track)
+        git_api = Factory.create(track)
+        patch = get_scm_patch(track, git_api)
         if patch:
-            issue = create_patch_issue_pr(patch, cur_time)
+            issue = create_patch_issue_pr(patch, cur_time, git_api)
             if issue:
                 create_issue_db(issue)
             else:
@@ -36,50 +37,12 @@ def upload_patch_to_gitee(track):
             logger.debug('[Patch Tracking %s] No new commit.', cur_time)
 
 
-def get_all_commit_info(scm_repo, db_commit, latest_commit):
-    """
-    get all commit information between to commits
-    """
-    commit_list = list()
-    github_api = GitHubApi()
-
-    while db_commit != latest_commit:
-        status, result = github_api.get_commit_info(scm_repo, latest_commit)
-        logger.debug('get_commit_info: %s %s', status, result)
-        if status == 'success':
-            if 'parent' in result:
-                ret = github_api.get_patch(scm_repo, latest_commit, latest_commit)
-                logger.debug('get patch api ret: %s', ret)
-                if ret['status'] == 'success':
-                    result['patch_content'] = ret['api_ret']
-                    # inverted insert commit_list
-                    commit_list.insert(0, result)
-                else:
-                    logger.error('Get scm: %s commit: %s patch failed. Result: %s', scm_repo, latest_commit, result)
-
-                latest_commit = result['parent']
-            else:
-                logger.info(
-                    '[Patch Tracking] Successful get scm commit from %s to %s ID/message/time/patch.', db_commit,
-                    latest_commit
-                )
-                break
-        else:
-            logger.error(
-                '[Patch Tracking] Get scm: %s commit: %s ID/message/time failed. Result: %s', scm_repo, latest_commit,
-                result
-            )
-
-    return commit_list
-
-
-def get_scm_patch(track):
+def get_scm_patch(track, git_api):
     """
     Traverse the Tracking data table to get the patch file of enabled warehouse.
     Different warehouse has different acquisition methods
     :return:
     """
-    github_api = GitHubApi()
     scm_dict = dict(
         scm_repo=track.scm_repo,
         scm_branch=track.scm_branch,
@@ -89,75 +52,40 @@ def get_scm_patch(track):
         branch=track.branch,
         version_control=track.version_control
     )
-    status, result = github_api.get_latest_commit(scm_dict['scm_repo'], scm_dict['scm_branch'])
-    logger.debug(
-        'repo: %s branch: %s. get_latest_commit: %s %s', scm_dict['scm_repo'], scm_dict['scm_branch'], status, result
-    )
 
-    if status == 'success':
-        commit_id = result['latest_commit']
-        if not scm_dict['scm_commit']:
-            data = {
-                'version_control': scm_dict['version_control'],
-                'repo': scm_dict['repo'],
-                'branch': scm_dict['branch'],
-                'enabled': scm_dict['enabled'],
-                'scm_commit': commit_id,
-                'scm_branch': scm_dict['scm_branch'],
-                'scm_repo': scm_dict['scm_repo']
-            }
-            update_tracking(data)
-            logger.info(
-                '[Patch Tracking] Scm_repo: %s Scm_branch: %s.Get latest commit ID: %s From commit ID: None.',
-                scm_dict['scm_repo'], scm_dict['scm_branch'], result['latest_commit']
-            )
-        else:
-            if commit_id != scm_dict['scm_commit']:
-                commit_list = get_all_commit_info(scm_dict['scm_repo'], scm_dict['scm_commit'], commit_id)
-                scm_dict['commit_list'] = commit_list
-                return scm_dict
-            logger.info(
-                '[Patch Tracking] Scm_repo: %s Scm_branch: %s.Get latest commit ID: %s From commit ID: %s. '
-                'Nothing need to do.', scm_dict['scm_repo'], scm_dict['scm_branch'], commit_id, scm_dict['scm_commit']
-            )
-    else:
-        logger.error(
-            '[Patch Tracking] Fail to get latest commit id of scm_repo: %s scm_branch: %s. Return val: %s',
-            scm_dict['scm_repo'], scm_dict['scm_branch'], result
-        )
+    commit_list = git_api.get_scm_patch()
+    if commit_list:
+        scm_dict['commit_list'] = commit_list
+        return scm_dict
+    logger.info('repo: %s branch: %s. get_latest_commit is None.', scm_dict['scm_repo'], scm_dict['scm_branch'])
+
     return None
 
 
-def create_patch_issue_pr(patch, cur_time):
+def create_patch_issue_pr(patch, cur_time, git_api):
     """
     Create temporary branches, submit files, and create PR and issue
     :return:
     """
     issue_dict = dict()
-    if not patch:
-        return None
-
+    gitee_repo = patch["repo"].replace("https://gitee.com/", "")
     issue_dict['repo'] = patch['repo']
     issue_dict['branch'] = patch['branch']
     new_branch = 'patch-tracking/' + cur_time
-    result = create_branch(patch['repo'], patch['branch'], new_branch)
+    result = create_branch(gitee_repo, patch['branch'], new_branch)
     if result == 'success':
         logger.info('[Patch Tracking %s] Successful create branch: %s', cur_time, new_branch)
     else:
         logger.error('[Patch Tracking %s] Fail to create branch: %s', cur_time, new_branch)
         return None
     patch_lst = list()
-    issue_table = "| Commit | Datetime | Message |\n| ------ | ------ | ------ |\n"
     for latest_commit in patch['commit_list']:
         scm_commit_url = '/'.join(['https://github.com', patch['scm_repo'], 'commit', latest_commit['commit_id']])
         latest_commit['message'] = latest_commit['message'].replace("\r", "").replace("\n", "<br>")
-        issue_table += '| [{}]({}) | {} | {} |'.format(
-            latest_commit['commit_id'][0:7], scm_commit_url, latest_commit['time'], latest_commit['message']
-        ) + '\n'
 
         patch_file_content = latest_commit['patch_content']
         post_data = {
-            'repo': patch['repo'],
+            'repo': gitee_repo,
             'branch': new_branch,
             'latest_commit_id': latest_commit['commit_id'],
             'patch_file_content': str(patch_file_content),
@@ -183,25 +111,22 @@ def create_patch_issue_pr(patch, cur_time):
         logger.error('[Patch Tracking %s] Fail to upload spec file. Result: %s', cur_time, result)
         return None
 
+    issue_table = git_api.issue_table(patch['commit_list'])
     logger.debug(issue_table)
-    result = create_gitee_issue(patch['repo'], patch['branch'], issue_table, cur_time)
+    result = create_gitee_issue(gitee_repo, patch['branch'], issue_table, cur_time)
     if result[0] == 'success':
         issue_num = result[1]
         logger.info('[Patch Tracking %s] Successfully create issue: %s', cur_time, issue_num)
 
         retry_count = 10
         while retry_count > 0:
-            ret = create_pull_request(patch['repo'], patch['branch'], new_branch, issue_num, cur_time)
+            ret = create_pull_request(gitee_repo, patch['branch'], new_branch, issue_num, cur_time)
             if ret == 'success':
                 logger.info('[Patch Tracking %s] Successfully create PR of issue: %s.', cur_time, issue_num)
                 break
-            else:
-                logger.warning(
-                    '[Patch Tracking %s] Fail to create PR of issue: %s. Result: %s', cur_time, issue_num, ret
-                )
-                retry_count -= 1
-                time.sleep(random.random() * 2)
-                continue
+            logger.warning('[Patch Tracking %s] Fail to create PR of issue: %s. Result: %s', cur_time, issue_num, ret)
+            retry_count -= 1
+            time.sleep(random.random() * 5)
         if retry_count == 0:
             logger.error('[Patch Tracking %s] Fail to create PR of issue: %s.', cur_time, issue_num)
             return None
@@ -233,25 +158,25 @@ def upload_spec_to_repo(patch, patch_lst, cur_time):
     update and upload spec file
     """
     new_branch = 'patch-tracking/' + cur_time
-
-    _, repo_name = patch['repo'].split('/')
+    gitee_repo = patch["repo"].replace("https://gitee.com/", "")
+    _, repo_name = gitee_repo.split('/')
     spec_file = repo_name + '.spec'
 
     patch_file_lst = [patch + '.patch' for patch in patch_lst]
 
-    log_title = "{} patch-tracking".format(cur_time)
+    log_title = "{} patch-tracking".format(datetime.datetime.now().strftime("%a %b %d %Y"))
     log_content = "append patch file of upstream repository from <{}> to <{}>".format(patch_lst[0], patch_lst[-1])
 
-    ret = get_path_content(patch['repo'], patch['branch'], spec_file)
+    ret = get_path_content(gitee_repo, patch['branch'], spec_file)
     if 'content' in ret:
         spec_content = str(base64.b64decode(ret['content']), encoding='utf-8')
         spec_sha = ret['sha']
         new_spec = modify_spec(log_title, log_content, patch_file_lst, spec_content)
-        result = update_spec_to_repo(patch['repo'], new_branch, cur_time, new_spec, spec_sha)
+        result = update_spec_to_repo(gitee_repo, new_branch, cur_time, new_spec, spec_sha)
     else:
         spec_content = ''
         new_spec = modify_spec(log_title, log_content, patch_file_lst, spec_content)
-        result = create_spec_to_repo(patch['repo'], new_branch, cur_time, new_spec)
+        result = create_spec_to_repo(gitee_repo, new_branch, cur_time, new_spec)
 
     return result
 
