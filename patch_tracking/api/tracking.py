@@ -22,10 +22,14 @@ def delete():
     input_params = request.args
     keys = list(input_params.keys())
 
+    param_error = False
     if not keys or "repo" not in keys:
-        return ResponseCode.ret_message(ResponseCode.INPUT_PARAMETERS_ERROR)
+        param_error = True
 
     if len(set(keys) - {"repo", "branch"}) != 0:
+        param_error = True
+
+    if param_error:
         return ResponseCode.ret_message(ResponseCode.INPUT_PARAMETERS_ERROR)
 
     try:
@@ -35,19 +39,16 @@ def delete():
                 delete_tracking(input_params['repo'], input_params['branch'])
                 logger.info('Delete tracking repo: %s, branch: %s', input_params['repo'], input_params['branch'])
                 return ResponseCode.ret_message(code=ResponseCode.SUCCESS)
-            else:
-                logger.info(
-                    'Delete tracking repo: %s, branch: %s not found.', input_params['repo'], input_params['branch']
-                )
-                return ResponseCode.ret_message(code=ResponseCode.DELETE_DB_NOT_FOUND)
-        else:
-            if Tracking.query.filter(Tracking.repo == input_params['repo']).first():
-                delete_tracking(input_params['repo'])
-                logger.info('Delete tracking repo: %s', input_params['repo'])
-                return ResponseCode.ret_message(code=ResponseCode.SUCCESS)
-            else:
-                logger.info('Delete tracking repo: %s not found.', input_params['repo'])
-                return ResponseCode.ret_message(code=ResponseCode.DELETE_DB_NOT_FOUND)
+
+            logger.info('Delete tracking repo: %s, branch: %s not found.', input_params['repo'], input_params['branch'])
+            return ResponseCode.ret_message(code=ResponseCode.DELETE_DB_NOT_FOUND)
+        if Tracking.query.filter(Tracking.repo == input_params['repo']).first():
+            delete_tracking(input_params['repo'])
+            logger.info('Delete tracking repo: %s', input_params['repo'])
+            return ResponseCode.ret_message(code=ResponseCode.SUCCESS)
+
+        logger.info('Delete tracking repo: %s not found.', input_params['repo'])
+        return ResponseCode.ret_message(code=ResponseCode.DELETE_DB_NOT_FOUND)
     except SQLAlchemyError as err:
         return ResponseCode.ret_message(code=ResponseCode.DELETE_DB_ERROR, data=err)
 
@@ -98,7 +99,7 @@ def post():
     if len(required_params) > 1 or (len(required_params) == 1 and required_params[0] != 'scm_commit'):
         return ResponseCode.ret_message(ResponseCode.INPUT_PARAMETERS_ERROR)
 
-    if data['version_control'] != 'github':
+    if data['version_control'] not in ["github", "git"]:
         return ResponseCode.ret_message(ResponseCode.INPUT_PARAMETERS_ERROR)
 
     track = Tracking.query.filter_by(repo=data['repo'], branch=data['branch']).first()

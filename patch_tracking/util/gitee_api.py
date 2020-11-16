@@ -72,7 +72,7 @@ def get_user_info(token):
     if ret:
         if ret_info.status_code == 200:
             return True, ret_info.text
-        return False, ret_info.json()
+        return False, ret_info.text
 
     return False, ret_info
 

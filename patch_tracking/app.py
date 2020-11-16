@@ -9,28 +9,11 @@ from patch_tracking.api.issue import issue
 from patch_tracking.api.tracking import tracking
 from patch_tracking.database import db
 from patch_tracking.task import task
-from patch_tracking.util import github_api, gitee_api
 
 logging.config.fileConfig('logging.conf', disable_existing_loggers=False)
 
 app = Flask(__name__)
 logger = logging.getLogger(__name__)
-
-
-def check_token():
-    """ check gitee/github token """
-    gitee_token = app.config['GITEE_ACCESS_TOKEN']
-    github_token = app.config['GITHUB_ACCESS_TOKEN']
-
-    github_ret = github_api.get_user_info(github_token)
-    if not github_ret[0]:
-        logger.error(github_ret[1])
-        sys.exit(1)
-
-    gitee_ret = gitee_api.get_user_info(gitee_token)
-    if not gitee_ret[0]:
-        logger.error(gitee_ret[1])
-        sys.exit(1)
 
 
 def check_listen(listen_param):
@@ -56,7 +39,7 @@ def check_settings_conf():
     check settings.conf
     """
     setting_error = False
-    required_settings = ['LISTEN', 'GITHUB_ACCESS_TOKEN', 'GITEE_ACCESS_TOKEN', 'SCAN_DB_INTERVAL', 'USER', 'PASSWORD']
+    required_settings = ['LISTEN', 'GITEE_ACCESS_TOKEN', 'SCAN_DB_INTERVAL', 'USER', 'PASSWORD']
     for setting in required_settings:
         if setting in app.config:
             if app.config[setting] == "":
@@ -94,11 +77,10 @@ except (SyntaxError, NameError):
     logger.error('settings.conf content format error.')
     sys.exit(1)
 
-check_token()
-
 app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///db.sqlite?check_same_thread=False&timeout=30'
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 app.config['SCHEDULER_EXECUTORS'] = {'default': {'type': 'threadpool', 'max_workers': 100}}
+app.config['GIT_BASE_PATH'] = "GIT_REPO_PATH"
 
 app.register_blueprint(issue, url_prefix="/issue")
 app.register_blueprint(tracking, url_prefix="/tracking")
