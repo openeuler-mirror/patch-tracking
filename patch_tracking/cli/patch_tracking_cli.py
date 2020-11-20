@@ -10,7 +10,6 @@ import pandas
 import requests
 from requests.auth import HTTPBasicAuth
 from requests.packages.urllib3.exceptions import InsecureRequestWarning
-from requests.packages.urllib3.exceptions import HTTPError
 
 requests.packages.urllib3.disable_warnings(InsecureRequestWarning)
 pandas.set_option('display.max_rows', None)
@@ -156,6 +155,7 @@ def params_input_track(params, file_path=None):
     branch = params['branch']
     scm_repo = params['scm_repo']
     scm_branch = params['scm_branch']
+    scm_commit = params['scm_commit']
     version_control = params['version_control'].lower()
     enabled = params['enabled'].lower()
     server = params['server']
@@ -185,6 +185,7 @@ def params_input_track(params, file_path=None):
         'version_control': version_control,
         'scm_repo': scm_repo,
         'scm_branch': scm_branch,
+        'scm_commit': scm_commit,
         'repo': repo,
         'branch': branch,
         'enabled': enabled
@@ -248,6 +249,7 @@ def add(args):
             'branch': args.branch,
             'scm_repo': args.scm_repo,
             'scm_branch': args.scm_branch,
+            'scm_commit': args.scm_commit,
             'version_control': args.version_control,
             'enabled': args.enabled,
             'server': args.server,
@@ -388,7 +390,7 @@ authentication_parser.add_argument('--password', required=True, help='authentica
 ADD_USAGE = """
     patch_tracking_cli add --server SERVER --user USER --password PASSWORD
                            --version_control github --scm_repo SCM_REPO --scm_branch SCM_BRANCH
-                           --repo REPO --branch BRANCH --enabled True
+                           --repo REPO --branch BRANCH --enabled True [--scm_commit SHA]
     patch_tracking_cli add --server SERVER --user USER --password PASSWORD --file FILE
     patch_tracking_cli add --server SERVER --user USER --password PASSWORD --dir DIR"""
 parser_add = subparsers.add_parser(
@@ -398,6 +400,7 @@ parser_add.set_defaults(func=add)
 parser_add.add_argument("--version_control", choices=["github", "git"], help="upstream version control system")
 parser_add.add_argument("--scm_repo", help="upstream scm repository")
 parser_add.add_argument("--scm_branch", help="upstream scm branch")
+parser_add.add_argument("--scm_commit", help="upstream scm commit sha")
 parser_add.add_argument("--repo", help="source package repository")
 parser_add.add_argument("--branch", help="source package branch")
 parser_add.add_argument("--enabled", choices=["True", "true", "False", "false"], help="whether tracing is enabled")

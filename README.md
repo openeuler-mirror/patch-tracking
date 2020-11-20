@@ -194,11 +194,12 @@ pbkdf2:sha256:150000$w38eLeRm$ebb5069ba3b4dda39a698bd1d9d7f5f848af3bd93b11e0cde2
 --branch ：需要进行跟踪的仓库的分支名称 \
 --scm_repo ：被跟踪的上游仓库的仓库名称，--version_control为github的格式：组织/仓库；--version_control为git的格式：仓库URL，不支持需要配置SSH key公私钥对才能克隆的URL \
 --scm_branch： 被跟踪的上游仓库的仓库的分支 \
+--scm_commit：指定跟踪的起始commit，选填，默认从当前最新commit开始跟踪 \
 --enabled ：是否自动跟踪该仓库
 
 例如：
 ```shell script
-patch-tracking-cli add --server 127.0.0.1:5001 --user admin --password Test@123 --version_control github --repo https://gitee.com/testPatchTrack/testPatch1 --branch master --scm_repo BJMX/testPatch01 --scm_branch test  --enabled true
+patch-tracking-cli add --server 127.0.0.1:5001 --user admin --password Test@123 --version_control github --repo https://gitee.com/testPatchTrack/testPatch1 --branch master --scm_repo BJMX/testPatch01 --scm_branch test  --scm_commit <COMMIT_SHA> --enabled true
 ```
 
 ### 指定文件添加
@@ -233,6 +234,8 @@ scm_branch ：被跟踪的上游仓库的仓库的分支 \
 repo ：需要进行跟踪的仓库URL，不支持需要配置SSH key公私钥对才能克隆的URL \
 branch ：需要进行跟踪的仓库的分支名称 \
 enabled ：是否自动跟踪该仓库
+
+如果指定起始的commit，增加一行`scm_commit: <commit sha>`
 
 ### 指定目录添加
 

@@ -6,6 +6,7 @@ import git
 import git.exc
 from flask import current_app
 from sqlalchemy.exc import SQLAlchemyError
+import time
 from patch_tracking.api.business import update_tracking
 import patch_tracking.util.upstream.upstream as upstream
 
@@ -60,28 +61,41 @@ class Git(upstream.Upstream):
     def git_fetch(self, repo):
         """git fetch"""
         logging.info("Fetching repo %s.", repo)
-        try:
-            if os.path.exists(repo):
-                repo = git.Repo(repo)
-                repo.remote().fetch()
-                logging.info("Fetch repo %s finish.", repo)
-            else:
+        if os.path.exists(repo):
+            repo = git.Repo(repo)
+            count = 10
+            while count > 0:
+                try:
+                    repo.remote().fetch()
+                    logging.info("Fetch repo %s finish.", repo)
+                    break
+                except git.exc.GitError as err:
+                    logging.warning("Fetching repo %s failed. Error: %s", repo, err)
+                count -= 1
+                time.sleep(1)
+            if count == 0:
+                logging.error("Fetching repo %s failed.", repo)
+                return False
+        else:
+            try:
                 self.git_clone()
                 logging.info("Cloned repo done %s.", repo)
-            return True
-        except git.exc.GitError as err:
-            logging.error("Fetching repo %s failed. Error: %s", repo, err)
-            return False
+            except git.exc.GitError as err:
+                logging.error("Fetching repo %s failed. Error: %s", repo, err)
+                return False
+        return True
 
     def git_latest_sha(self):
         """
         get latest commit id
         """
         repo_path = os.path.join(self.base_path, self.repo_dir_name)
-        logging.info("Getting latest commit id of repo: %s branch: %s .", repo_path, self.track.scm_branch)
         try:
             repo = git.Repo(repo_path)
             sha = repo.commit(self.track.scm_branch).hexsha
+            logging.info(
+                "Getting latest commit id of repo: %s branch: %s sha: %s .", repo_path, self.track.scm_branch, sha
+            )
             return sha
         except git.exc.GitError as err:
             logging.error(
@@ -89,17 +103,53 @@ class Git(upstream.Upstream):
             )
             return False
 
-    def get_commit_list(self, repo, start_commit):
+    def get_all_commit_list(self):
+        """get all commits of a repo/branch"""
+        repo_path = os.path.join(self.base_path, self.repo_dir_name)
+        logging.info("Getting all commit id of repo: %s.", repo_path)
+        try:
+            repo = git.Repo(repo_path)
+            repo.git.symbolic_ref("HEAD", "refs/heads/" + self.track.scm_branch)
+            all_commit_list = [str(item) for item in repo.iter_commits()]
+            logging.info("Get all commit id of repo: %s branch: %s.", repo_path, self.track.scm_branch)
+            return all_commit_list
+        except git.exc.GitError as err:
+            logging.error("Get all commit id of repo: %s failed. Error: %s", repo_path, err)
+            return False
+
+    def check_commit_exist(self, commit):
+        """check commit exist"""
+        repo_path = os.path.join(self.base_path, self.repo_dir_name)
+        branch = self.track.scm_branch
+        repo = git.Repo(repo_path)
+        try:
+            ret = repo.git.branch("--contains", commit)
+            if ret:
+                ret = [r.split(" ")[-1] for r in ret.split("\n")]
+                if branch in ret:
+                    return True
+            return False
+        except git.exc.GitCommandError as err:
+            logging.error("Error: %s.", err)
+            return False
+
+    def get_commit_list(self, start_commit, latest_commit):
         """get commit list"""
         commit_list = list()
+        if start_commit == latest_commit:
+            return commit_list
         fetch_ret = self.git_fetch(os.path.join(self.base_path, self.repo_dir_name))
         if fetch_ret:
-            repo = git.Repo(repo)
-            all_commit_list = list(repo.iter_commits())
-            commit_list = list()
-            for item in all_commit_list:
-                if str(item) != start_commit:
-                    commit_list.append(str(item))
+            if not self.check_commit_exist(start_commit):
+                logging.error(
+                    "Commit sha: %s not exist in repo: %s branch: %s.", start_commit, self.track.scm_repo,
+                    self.track.scm_branch
+                )
+                return commit_list
+            all_commit_list = self.get_all_commit_list()
+            for commit in all_commit_list:
+                if commit != start_commit:
+                    commit_list.append(commit)
                 else:
                     break
             commit_list.append(start_commit)
@@ -162,7 +212,7 @@ class Git(upstream.Upstream):
 
             return None
 
-        commit_list = self.get_commit_list(repo, self.track.scm_commit)
+        commit_list = self.get_commit_list(self.track.scm_commit, latest_commit)
         if not commit_list:
             return None
 

@@ -62,7 +62,7 @@ class GitHub(upstream.Upstream):
             'Accept': 'application/json'
         }
 
-    def api_request(self, url):
+    def api_request(self, url, params=None):
         """
         request GitHub API
         """
@@ -70,7 +70,7 @@ class GitHub(upstream.Upstream):
         count = 30
         while count > 0:
             try:
-                response = requests.get(url, headers=self.headers)
+                response = requests.get(url, headers=self.headers, params=params)
                 return response
             except exceptions.ConnectionError as err:
                 logger.warning(err)
@@ -110,6 +110,20 @@ class GitHub(upstream.Upstream):
             ret_dict['status'] = 'error'
             ret_dict['api_ret'] = 'fail to connect github by api.'
         return ret_dict
+
+    def get_all_commit_list(self):
+        """
+        get latest 100 commit
+        """
+        url = '/'.join(['https://api.github.com/repos', self.track.scm_repo, 'commits'])
+        params = {"sha": self.track.scm_branch, "page": 0, "per_page": 100}
+        all_commits = list()
+        ret = self.api_request(url, params=params)
+        for item in ret.json():
+            all_commits.append(item)
+
+        logger.debug('[Patch Tracking] Successful get all commits.')
+        return all_commits
 
     def get_latest_commit_id(self):
         """
@@ -161,6 +175,15 @@ class GitHub(upstream.Upstream):
         """
         get patch list
         """
+        all_commits_info = self.get_all_commit_list()
+        all_commits = [item["sha"] for item in all_commits_info]
+
+        if self.track.scm_commit not in all_commits:
+            logger.error(
+                '[Patch Tracking] Scm repo commit : %s not found in latest 100 commits of scm_repo: %s scm_branch: %s.',
+                self.track.scm_commit, self.track.scm_repo, self.track.scm_branch
+            )
+            return None
         commit_list = list()
         status, result = self.get_latest_commit_id()
         if status != 'success':
