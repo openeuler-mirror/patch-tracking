@@ -29,7 +29,7 @@ patch-tracking采用 C/S 架构。
 3. 创建临时分支，将获取到的补丁文件提交到临时分支。
 4. 自动提交issue到对应项目，并生成关联 issue 的 PR。
 
-![PatchTracking](images/PatchTracking.jpg)
+![PatchTracking](./images/PatchTracking.jpg)
 
 * Maintainer对提交的补丁处理流程
 
@@ -37,7 +37,7 @@ patch-tracking采用 C/S 架构。
 1. Maintainer分析临时分支中的补丁文件，判断是否合入。
 2. 执行构建，构建成功后判断是否合入PR。
 
-![Maintainer](images/Maintainer.jpg)
+![Maintainer](./images/Maintainer.jpg)
 
 ## 数据结构
 
@@ -75,7 +75,7 @@ rpm 包获取地址：https://build.openeuler.org/package/show/openEuler:20.09/p
 
 #### 方法1：从repo源安装
 
-1. 使用 dnf 挂载 repo源（需要 20.09 或更新的 repo 源，具体方法参考[应用开发指南](https://openeuler.org/zh/docs/20.03_LTS/docs/ApplicationDev/%E5%BC%80%E5%8F%91%E7%8E%AF%E5%A2%83%E5%87%86%E5%A4%87.html)），然后执行如下指令下载以及安装pkgship及其依赖。
+1. 使用 dnf 挂载 repo源（需要 20.09 或更新的 repo 源，具体方法参考[应用开发指南](https://openeuler.org/zh/docs/20.03_LTS/docs/ApplicationDev/%E5%BC%80%E5%8F%91%E7%8E%AF%E5%A2%83%E5%87%86%E5%A4%87.html)），然后执行如下指令下载以及安装 patch-tracking 及其依赖。
 
 2. 执行以下命令安装`patch-tracking`。
 
@@ -88,7 +88,7 @@ rpm 包获取地址：https://build.openeuler.org/package/show/openEuler:20.09/p
 1. 首先安装相关依赖。
 
    ```shell script
-   dnf install python3-uWSGI python3-flask python3-Flask-SQLAlchemy python3-Flask-APScheduler python3-Flask-HTTPAuth python3-requests python3-pandas
+   dnf install python3-uWSGI python3-flask python3-Flask-SQLAlchemy python3-Flask-APScheduler python3-Flask-HTTPAuth python3-requests python3-pandas git
    ```
 
 2. 以`patch-tracking-1.0.0-1.oe1.noarch.rpm`为例，执行如下命令安装。
@@ -147,7 +147,7 @@ openssl req -x509 -days 3650 -subj "/CN=self-signed" \
 
   > `USER`默认值为`admin`。
 
-​     执行如下指令，获取口令的哈希值，其中Test@123为设置的口令。
+执行如下指令，获取口令的哈希值，其中Test@123为设置的口令。
 
 ```
 [root]# generate_password Test@123
@@ -189,16 +189,16 @@ pbkdf2:sha256:150000$w38eLeRm$ebb5069ba3b4dda39a698bd1d9d7f5f848af3bd93b11e0cde2
 >--user ：POST接口需要进行认证的用户名，同settings.conf中的USER参数 \
 --password ：POST接口需要进行认证的口令，为settings.conf中的PASSWORD哈希值对应的实际的口令字符串 \
 --server ：启动Patch Tracking服务的URL，例如：127.0.0.1:5001 \
---version_control ：上游仓库版本的控制工具，只支持github \
---repo： 需要进行跟踪的仓库名称，格式：组织/仓库 \
+--version_control ：上游仓库版本的控制工具，支持github, git类型 \
+--repo： 需要进行跟踪的仓库URL，不支持需要配置SSH key公私钥对才能克隆的URL \
 --branch ：需要进行跟踪的仓库的分支名称 \
---scm_repo ：被跟踪的上游仓库的仓库名称，github格式：组织/仓库 \
+--scm_repo ：被跟踪的上游仓库的仓库名称，--version_control为github的格式：组织/仓库；--version_control为git的格式：仓库URL，不支持需要配置SSH key公私钥对才能克隆的URL \
 --scm_branch： 被跟踪的上游仓库的仓库的分支 \
 --enabled ：是否自动跟踪该仓库
 
 例如：
 ```shell script
-patch-tracking-cli add --server 127.0.0.1:5001 --user admin --password Test@123 --version_control github --repo testPatchTrack/testPatch1 --branch master --scm_repo BJMX/testPatch01 --scm_branch test  --enabled true
+patch-tracking-cli add --server 127.0.0.1:5001 --user admin --password Test@123 --version_control github --repo https://gitee.com/testPatchTrack/testPatch1 --branch master --scm_repo BJMX/testPatch01 --scm_branch test  --enabled true
 ```
 
 ### 指定文件添加
@@ -220,17 +220,17 @@ yaml文件内容格式如下，冒号左边的内容不可修改，右边内容�
 
 ```shell script
 version_control: github
-scm_repo: xxx/xxx
+scm_repo: <SCM_REPO>
 scm_branch: master
-repo: xxx/xxx
+repo: <URL>
 branch: master
 enabled: true
 ```
 
 >version_control ：上游仓库版本的控制工具，只支持github \
-scm_repo ：被跟踪的上游仓库的仓库名称，github格式：组织/仓库 \
+scm_repo ：被跟踪的上游仓库的仓库名称，github格式：组织/仓库；git格式：仓库URL，不支持需要配置SSH key公私钥对才能克隆的URL \
 scm_branch ：被跟踪的上游仓库的仓库的分支 \
-repo ：需要进行跟踪的仓库名称，格式：组织/仓库 \
+repo ：需要进行跟踪的仓库URL，不支持需要配置SSH key公私钥对才能克隆的URL \
 branch ：需要进行跟踪的仓库的分支名称 \
 enabled ：是否自动跟踪该仓库
 
@@ -280,7 +280,7 @@ patch-tracking-cli delete --server SERVER --user USER --password PWD --repo REPO
 ```
 例如：
 ```shell script
-patch-tracking-cli delete --server 127.0.0.1:5001 --user admin --password Test@123 --repo testPatchTrack/testPatch1 --branch master
+patch-tracking-cli delete --server 127.0.0.1:5001 --user admin --password Test@123 --repo https://gitee.com/testPatchTrack/testPatch1 --branch master
 ```
 
 > 可以删除指定repo和branch的单条数据；也可直接删除指定repo下所有branch的数据。
@@ -291,4 +291,10 @@ patch-tracking-cli delete --server 127.0.0.1:5001 --user admin --password Test@1
 登录Gitee上进行跟踪的软件项目，在该项目的Issues和Pull Requests页签下，可以查看到名为`[patch tracking] TIME`，例如` [patch tracking] 20200713101548`的条目，该条目即是刚生成的补丁文件的issue和对应PR。
 
 
+# FAQ
+
+* 访问 `api.github.com` Connection refused 异常
+
+patch-tracking 运行过程中，可能会出现如下报错 `9月 21 22:00:10 localhost.localdomain patch-tracking[36358]: 2020-09-21 22:00:10,812 - patch_tracking.util.github_api - WARNING - HTTPSConnectionPool(host='api.github.com', port=443): Max retries exceeded with url: /user (Caused by NewConnectionError('<urllib3.connection.HTTPSConnection object at 0xfffe19d35820>: Failed to establish a new connection: [Errno 111] Connection refused'))`，原因是 patch-tracking 与 GitHub API 服务之间网络访问不稳定导致。
+请确保在与 GitHub API 服务之间网络稳定的环境中（如华为云香港区域）运行 patch-tracking。
 
