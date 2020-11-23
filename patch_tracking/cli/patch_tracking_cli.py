@@ -5,10 +5,12 @@ command line of creating tracking item
 import argparse
 import os
 import sys
+import git
 import pandas
 import requests
 from requests.auth import HTTPBasicAuth
 from requests.packages.urllib3.exceptions import InsecureRequestWarning
+from requests.packages.urllib3.exceptions import HTTPError
 
 requests.packages.urllib3.disable_warnings(InsecureRequestWarning)
 pandas.set_option('display.max_rows', None)
@@ -23,42 +25,40 @@ def query_table(args):
 
     if args.table == "tracking":
         url = '/'.join(['https:/', server, 'tracking'])
-        params = {'repo': args.repo, 'branch': args.branch}
-        try:
-            ret = requests.get(url, params=params, verify=False)
-            if ret.status_code == 200 and ret.json()['code'] == '2001':
-                return 'success', ret
-
-            return 'error', ret
-        except IOError as exception:
-            return 'error', 'Connect server error: ' + str(exception)
     elif args.table == "issue":
         url = '/'.join(['https:/', server, 'issue'])
-        params = {'repo': args.repo, 'branch': args.branch}
-        try:
-            ret = requests.get(url, params=params, verify=False)
-            if ret.status_code == 200 and ret.json()['code'] == '2001':
-                return 'success', ret
+    else:
+        return 'error', 'table ' + args.table + ' not found'
 
-            return 'error', ret
-        except IOError as exception:
-            return 'error', 'Connect server error: ' + str(exception)
-    return 'error', 'table ' + args.table + ' not found'
+    params = {'repo': args.repo, 'branch': args.branch}
+    try:
+        ret = requests.get(url, params=params, verify=False)
+        if ret.status_code == 200 and ret.json()['code'] == '2001':
+            return 'success', ret
+
+        return 'error', ret
+    except IOError as exception:
+        return 'error', 'Connect server error: ' + str(exception)
 
 
 def add_param_check_url(params, file_path=None):
     """
     check url
     """
-    scm_url = f"https://github.com/{params['scm_repo']}/tree/{params['scm_branch']}"
-    url = f"https://gitee.com/{params['repo']}/tree/{params['branch']}"
+    url = f"{params['repo']}"
     patch_tracking_url = f"https://{params['server']}"
     server_ret = server_check(patch_tracking_url)
     if server_ret[0] != 'success':
         return 'error'
 
-    scm_ret = repo_branch_check(scm_url)
-    if scm_ret[0] != 'success':
+    if params["version_control"] == "github":
+        scm_url = f"https://github.com/{params['scm_repo']}"
+    elif params["version_control"] == "git":
+        scm_url = f"{params['scm_repo']}"
+    else:
+        return "error"
+    scm_ret = url_check(scm_url, params['scm_branch'])
+    if not scm_ret[0]:
         if file_path:
             print(
                 f"scm_repo: {params['scm_repo']} and scm_branch: {params['scm_branch']} check failed. \n"
@@ -67,12 +67,12 @@ def add_param_check_url(params, file_path=None):
         else:
             print(f"scm_repo: {params['scm_repo']} and scm_branch: {params['scm_branch']} check failed. {scm_ret[1]}")
         return 'error'
-    ret = repo_branch_check(url)
-    if ret[0] != 'success':
+    ret = url_check(url, params['branch'])
+    if not ret[0]:
         if file_path:
             print(f"repo: {params['repo']} and branch: {params['branch']} check failed. {ret[1]}. Error in {file_path}")
         else:
-            print(f"repo: {params['repo']} and branch: {params['branch']} check failed. {ret[1]}.")
+            print(f"repo: {params['repo']} and branch: {params['branch']} check failed. {ret[1]}")
         return 'error'
     return None
 
@@ -93,25 +93,44 @@ def server_check(url):
     return 'error', ret.text
 
 
-def repo_branch_check(url):
+def url_check(url, branch):
     """
-    check if repo/branch exist
+    check url/branch exist
     """
-    headers = {
-        "User-Agent":
-        "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) " +
-        "Ubuntu Chromium/83.0.4103.61 Chrome/83.0.4103.61 Safari/537.36"
-    }
-    try:
-        ret = requests.get(url=url, headers=headers)
-    except IOError as exception:
-        return 'error', exception
-    if ret.status_code == 404:
-        return 'error', f'{url} not exist.'
-    if ret.status_code == 200:
-        return 'success', ret
+    url_protocol = url[0:6]
+    if "http" in url_protocol:
+        headers = {
+            "User-Agent":
+            "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) " +
+            "Ubuntu Chromium/83.0.4103.61 Chrome/83.0.4103.61 Safari/537.36"
+        }
+        ret = requests.get(url=url + "/tree/" + branch, headers=headers)
+        if ret.status_code == 404:
+            return False, "Git repo or branch not exist."
+        return True, ret
+    elif "git" in url_protocol:
+        return lsremote(url, branch)
+    else:
+        return False, "URL Error: Transfer Protocols must be HTTP or Git."
 
-    return 'error', ret.text
+
+def lsremote(url, branch):
+    """
+    git ls-remote check url/branch exist
+    """
+    remote_refs = dict()
+    git_cmd = git.cmd.Git()
+    try:
+        for ref in git_cmd.ls_remote(url).split("\n"):
+            hash_ref_list = ref.split("\t")
+            remote_refs[hash_ref_list[1]] = hash_ref_list[0]
+    except git.exc.GitCommandError as error:
+        print(error)
+        return False, "Git url: {} error.".format(url)
+
+    if "refs/heads/" + branch not in remote_refs:
+        return False, "Branch: {} not exist.".format(branch)
+    return True, remote_refs
 
 
 def latin1_encode(text):
@@ -149,15 +168,14 @@ def params_input_track(params, file_path=None):
             enabled
         )
 
-    if version_control not in ["github"]:
+    if version_control not in ["github", "git"]:
         print(ADD_USAGE)
         return "error", "error: version_control: invalid value: '{}' (choose from 'github')".format(version_control)
 
-    err = latin1_encode(user)
-    if err:
+    if latin1_encode(user):
         return "error", "ERROR: user: only latin1 character set are allowed."
-    err = latin1_encode(password)
-    if err:
+
+    if latin1_encode(password):
         return "error", "ERROR: user: only latin1 character set are allowed."
 
     enabled = bool(enabled == 'true')
@@ -195,7 +213,7 @@ def check_add_param(params):
             success = False
     if not success:
         print(
-            "patch_tracking_cli add: error: the following arguments are required:  --{}".format(
+            "patch_tracking_cli add: error: the following arguments are required: --{}".format(
                 ", --".join(miss_params)
             )
         )
@@ -309,8 +327,8 @@ def file_input_track(file_path, args):
             params = dict()
             for item in content:
                 if ":" in item:
-                    k = item.split(':')[0]
-                    value = item.split(':')[1].strip(' ').strip('\n')
+                    k = item.split(':')[0].strip()
+                    value = item.lstrip(k).strip().strip(":").strip().strip("\n")
                     params.update({k: value})
             params.update({'server': args.server, 'user': args.user, 'password': args.password})
             ret = params_input_track(params, file_path)
@@ -377,7 +395,7 @@ parser_add = subparsers.add_parser(
     'add', parents=[common_parser, authentication_parser], help="add tracking", usage=ADD_USAGE, allow_abbrev=False
 )
 parser_add.set_defaults(func=add)
-parser_add.add_argument("--version_control", choices=['github'], help="upstream version control system")
+parser_add.add_argument("--version_control", choices=["github", "git"], help="upstream version control system")
 parser_add.add_argument("--scm_repo", help="upstream scm repository")
 parser_add.add_argument("--scm_branch", help="upstream scm branch")
 parser_add.add_argument("--repo", help="source package repository")
