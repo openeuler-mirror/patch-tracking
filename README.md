@@ -235,7 +235,12 @@ repo ：需要进行跟踪的仓库URL，不支持需要配置SSH key公私钥�
 branch ：需要进行跟踪的仓库的分支名称 \
 enabled ：是否自动跟踪该仓库
 
-如果指定起始的commit，增加一行`scm_commit: <commit sha>`
+如果指定起始的commit，yaml文件内容增加一行
+```shell script
+scm_commit: <commit sha>
+```
+
+>scm_commit ：用户指定的跟踪仓库/分支的起始commit
 
 ### 指定目录添加
 
