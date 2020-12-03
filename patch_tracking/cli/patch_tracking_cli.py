@@ -333,6 +333,8 @@ def file_input_track(file_path, args):
                     value = item.lstrip(k).strip().strip(":").strip().strip("\n")
                     params.update({k: value})
             params.update({'server': args.server, 'user': args.user, 'password': args.password})
+            if "scm_commit" not in params:
+                params.update({'scm_commit': None})
             ret = params_input_track(params, file_path)
             if ret[0] == 'success':
                 print('Tracking successfully {} for {}'.format(ret[1], file_path))
