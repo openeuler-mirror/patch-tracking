@@ -1,0 +1,7 @@
+label: patch-tracking
+isManual: true
+description: 对软件包进行补丁管理
+sections:
+  - label: patch-tracking
+    href: ./patch_tracking.md
+
