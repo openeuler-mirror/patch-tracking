@@ -1,0 +1,6 @@
+label: patch-tracking
+isManual: true
+description: Package patch management
+sections:
+  - label: patch-tracking
+    href: ./patch_tracking.md
