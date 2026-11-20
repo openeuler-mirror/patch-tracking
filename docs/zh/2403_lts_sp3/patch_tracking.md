@@ -72,7 +72,7 @@ rpm 包获取地址：[https://repo.openeuler.org](https://repo.openeuler.org)�
 
 方法1：从repo源安装
 
-1. 使用 dnf 挂载 repo源（具体方法参考《[应用开发指南](https://gitee.com/openeuler/docs/tree/stable-24.03_LTS_SP3/docs/zh/server/development/application_dev/preparations_for_development_environment.md)》。
+1. 使用 dnf 挂载 repo源（具体方法参考《[应用开发指南](https://docs.openeuler.openatom.cn/zh/docs/24.03_LTS_SP3/server/development/application_dev/application_development.html)》。
 
 2. 执行以下命令安装`patch-tracking`及其依赖。
 
